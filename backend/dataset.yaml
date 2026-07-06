@@ -1,0 +1,6 @@
+path: C:/Users/ranga/Desktop/New folder (2)/VEHICLE-MANAGEMENT-USING-AI/backend/data
+train: images/train
+val: images/val
+
+names:
+  0: license_plate
