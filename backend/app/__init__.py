@@ -1,1 +1,0 @@
-# TRINETHRA Python App Module
