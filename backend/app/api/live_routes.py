@@ -8,7 +8,7 @@ from datetime import datetime
 from fastapi import APIRouter, UploadFile, File, Form, HTTPException, BackgroundTasks, Query
 from app.config import settings
 from app.utils.validators import (
-    validate_image_file, validate_video_file, sanitize_filename, 
+    validate_image_file, validate_video_file, sanitize_filename,
     validate_rtsp_url, validate_file_size
 )
 from app.utils.plate_normalizer import normalize_plate
@@ -19,11 +19,109 @@ from app.services.ocr_service import ocr_service
 from app.services.deduplication_service import dedup_service
 from app.services.video_service import video_processor
 from app.services.stream_service import stream_service
+from app.services.camera_manager import camera_manager
 from app.services.websocket_service import ws_manager
 from app.models.detection import DetectionCreate, BoundingBox, SourceInfo, MediaInfo
 
 logger = logging.getLogger("trinethra.api.live")
 router = APIRouter(prefix="/api/live", tags=["live"])
+
+# ═══════════════════════════════════════════════════════════════
+# CAMERA MANAGEMENT ENDPOINTS
+# ═══════════════════════════════════════════════════════════════
+
+@router.get("/cameras")
+async def list_cameras():
+    """
+    Returns status metrics for all currently active camera pipelines.
+    Includes per-camera FPS, queue sizes, inference latency, active tracks, etc.
+    """
+    return {"cameras": camera_manager.get_all_statuses()}
+
+
+@router.post("/cameras")
+async def register_camera(
+    background_tasks: BackgroundTasks,
+    camera_name: str = Form(...),
+    location: str = Form(...),
+    source_url: str = Form(...),
+    source_type: str = Form("rtsp"),
+):
+    """
+    Registers a new camera and starts its processing pipeline.
+    Supports source_type: rtsp, webcam, video.
+    Equivalent to /rtsp but generalised for all source types.
+    """
+    if source_type == "rtsp":
+        if not validate_rtsp_url(source_url):
+            raise HTTPException(status_code=400, detail="Invalid RTSP URL.")
+
+    session_id = await session_repo.create_session({
+        "source_type": source_type,
+        "source_name": camera_name,
+        "source_config": {"location": location, "url": source_url},
+    })
+    prefix = source_type[:3].upper()
+    camera_id = f"{prefix}-{session_id[:8].upper()}"
+
+    if source_type == "rtsp":
+        background_tasks.add_task(
+            stream_service.start_rtsp_stream,
+            rtsp_url=source_url,
+            session_id=session_id,
+            source_id=camera_id,
+            camera_name=camera_name,
+        )
+
+    return {"camera_id": camera_id, "session_id": session_id}
+
+
+@router.delete("/cameras/{camera_id}")
+async def delete_camera(camera_id: str):
+    """
+    Stops the camera pipeline and removes it from the active registry.
+    """
+    removed = camera_manager.stop_camera(camera_id)
+    if not removed:
+        raise HTTPException(status_code=404, detail=f"Camera '{camera_id}' not found.")
+    return {"success": True, "camera_id": camera_id}
+
+
+@router.post("/cameras/{camera_id}/stop")
+async def stop_camera(camera_id: str):
+    """
+    Gracefully stops a camera pipeline without deleting its session record.
+    """
+    removed = camera_manager.stop_camera(camera_id)
+    return {"stopped": removed, "camera_id": camera_id}
+
+
+@router.get("/cameras/{camera_id}/status")
+async def get_camera_status(camera_id: str):
+    """
+    Returns live diagnostic metrics for a single camera pipeline:
+    FPS, queue depth, inference latency, OCR latency, active tracks, etc.
+    """
+    status = camera_manager.get_status(camera_id)
+    if status is None:
+        raise HTTPException(status_code=404, detail=f"Camera '{camera_id}' not found.")
+    return status
+
+
+@router.get("/metrics")
+async def get_system_metrics():
+    """
+    Returns aggregate system metrics across all active camera pipelines.
+    """
+    cameras = camera_manager.get_all_statuses()
+    return {
+        "active_cameras": len(cameras),
+        "max_cameras": settings.MAX_CAMERAS,
+        "cameras": cameras,
+        "yolo_model_loaded": yolo_service.is_loaded,
+        "ocr_initialized": ocr_service.is_initialized,
+    }
+
 
 @router.post("/image")
 async def process_image_upload(file: UploadFile = File(...)):
@@ -344,9 +442,11 @@ async def stop_session(session_id: str):
     if session.status in ["processing", "live", "connecting", "reconnecting"]:
         video_processor.stop_session(session_id)
         stream_service.stop_session(session_id)
+        # camera_manager is already imported at module level
+        camera_manager.stop_cameras_by_session(session_id)
         await session_repo.update_session(session_id, status="stopped")
         await ws_manager.broadcast(session_id, "source_status", {"status": "stopped"})
-        
+
     return {"status": "stopped", "session_id": session_id}
 
 @router.get("/sessions")

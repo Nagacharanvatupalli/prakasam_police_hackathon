@@ -108,4 +108,25 @@ class DetectionRepository:
         docs = await cursor.to_list(length=limit)
         return [self._map_doc_to_response(doc) for doc in docs]
 
+    async def find_recent_by_source(
+        self,
+        source_id: str,
+        window_seconds: int,
+        limit: int = 30,
+    ) -> List[dict]:
+        """
+        Returns raw detection documents (not mapped) for a given source within
+        the time window. Used by deduplication service for fuzzy similarity checks.
+        """
+        db = get_database()
+        threshold_time = datetime.utcnow() - timedelta(seconds=window_seconds)
+        cursor = db.detections.find(
+            {
+                "source.source_id": source_id,
+                "last_seen": {"$gte": threshold_time},
+            }
+        ).sort("last_seen", -1).limit(limit)
+        docs = await cursor.to_list(length=limit)
+        return docs
+
 detection_repo = DetectionRepository()

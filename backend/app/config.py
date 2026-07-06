@@ -25,6 +25,29 @@ class Settings:
     DETECTION_CONFIDENCE_THRESHOLD: float = float(os.getenv("DETECTION_CONFIDENCE_THRESHOLD", "0.25"))
     DUPLICATE_WINDOW_SECONDS: int = int(os.getenv("DUPLICATE_WINDOW_SECONDS", "30"))
     
+    # New Multi-Camera and Tracking Pipeline parameters
+    MAX_CAMERAS: int = int(os.getenv("MAX_CAMERAS", "8"))
+    FRAME_QUEUE_SIZE: int = int(os.getenv("FRAME_QUEUE_SIZE", "5"))
+    FRAME_SKIP: int = int(os.getenv("FRAME_SKIP", "3"))
+    TRACK_LOST_TIMEOUT: int = int(os.getenv("TRACK_LOST_TIMEOUT", "10"))
+    
+    # OCR Triggering Rules
+    OCR_INTERVAL: int = int(os.getenv("OCR_INTERVAL", "10"))  # frames between OCR runs per track
+    MAX_OCR_ATTEMPTS: int = int(os.getenv("MAX_OCR_ATTEMPTS", "5"))
+    MIN_PLATE_WIDTH: int = int(os.getenv("MIN_PLATE_WIDTH", "30"))
+    MIN_PLATE_HEIGHT: int = int(os.getenv("MIN_PLATE_HEIGHT", "15"))
+    MIN_SHARPNESS: float = float(os.getenv("MIN_SHARPNESS", "50.0"))
+    
+    # Consensus and similarity thresholds
+    PLATE_SIMILARITY_THRESHOLD: float = float(os.getenv("PLATE_SIMILARITY_THRESHOLD", "0.8"))
+    
+    # Aggregation scoring weights (must sum to 1.0)
+    DETECTION_WEIGHT: float = float(os.getenv("DETECTION_WEIGHT", "0.15"))
+    OCR_WEIGHT: float = float(os.getenv("OCR_WEIGHT", "0.35"))
+    SHARPNESS_WEIGHT: float = float(os.getenv("SHARPNESS_WEIGHT", "0.15"))
+    VALIDITY_WEIGHT: float = float(os.getenv("VALIDITY_WEIGHT", "0.25"))
+    TEMPORAL_CONSISTENCY_WEIGHT: float = float(os.getenv("TEMPORAL_CONSISTENCY_WEIGHT", "0.10"))
+
     UPLOAD_DIR: str = os.getenv("UPLOAD_DIR", "uploads")
     CROPS_DIR: str = os.getenv("CROPS_DIR", "crops")
 

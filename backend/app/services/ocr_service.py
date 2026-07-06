@@ -1,4 +1,5 @@
 import logging
+import threading
 import cv2
 import numpy as np
 from paddleocr import PaddleOCR
@@ -7,9 +8,12 @@ from app.utils.plate_normalizer import get_plate_info
 
 logger = logging.getLogger("trinethra.ocr")
 
+
 class OCRService:
     def __init__(self):
         self.reader = None
+        # Thread lock to serialize PaddleOCR GPU/CPU execution across threads
+        self.lock = threading.Lock()
 
     def initialize(self, languages: list[str] = None):
         if languages is None:
@@ -45,9 +49,9 @@ class OCRService:
 
     def _run_ocr(self, img: np.ndarray) -> list:
         """
-        Runs PaddleOCR on an image and returns results shaped like the old
-        EasyOCR output: a list of (bbox, text, confidence) tuples, so the
-        rest of recognize() doesn't need to change.
+        Runs PaddleOCR on an image under the global thread lock.
+        Returns results shaped like EasyOCR output:
+        a list of (bbox, text, confidence) tuples.
         """
         if img is None or img.size == 0:
             return []
@@ -55,7 +59,10 @@ class OCRService:
         if img.ndim == 2:
             img = cv2.cvtColor(img, cv2.COLOR_GRAY2BGR)
 
-        results = self.reader.predict(img)
+        # Serialize OCR execution to prevent concurrent GPU context issues
+        with self.lock:
+            results = self.reader.predict(img)
+
         if not results:
             return []
 
@@ -78,6 +85,10 @@ class OCRService:
         return parsed
 
     def recognize(self, crop: np.ndarray) -> dict:
+        """
+        Runs multi-strategy PaddleOCR on a plate crop.
+        Returns the best result including text, confidence, and validation info.
+        """
         if not self.is_initialized:
             logger.error("OCR service is not initialized.")
             return {"text": "", "raw_text": "", "confidence": 0.0, "is_valid": False}
@@ -104,6 +115,7 @@ class OCRService:
                     "confidence": conf,
                     "is_valid": info["is_valid"],
                     "validation_status": info["validation_status"],
+                    "validity_score": info["validity_score"],
                     "strategy": strategy_name
                 })
             except Exception as e:
@@ -123,6 +135,7 @@ class OCRService:
                         "confidence": conf,
                         "is_valid": info["is_valid"],
                         "validation_status": info["validation_status"],
+                        "validity_score": info["validity_score"],
                         "strategy": "original"
                     })
             except Exception as e:
@@ -131,9 +144,10 @@ class OCRService:
         if not candidates:
             return {
                 "text": "", "raw_text": "", "confidence": 0.0,
-                "is_valid": False, "status": "invalid"
+                "is_valid": False, "status": "invalid", "validity_score": 0.0
             }
 
+        # Prefer valid candidates, then sort by confidence
         valid_candidates = [c for c in candidates if c["is_valid"]]
 
         if valid_candidates:
@@ -148,8 +162,10 @@ class OCRService:
             "raw_text": best["raw_text"],
             "confidence": best["confidence"],
             "is_valid": best["is_valid"],
-            "status": best["validation_status"]
+            "status": best["validation_status"],
+            "validity_score": best["validity_score"],
         }
+
 
 # Singleton Instance
 ocr_service = OCRService()
