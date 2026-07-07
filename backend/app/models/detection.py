@@ -26,6 +26,8 @@ class DetectionCreate(BaseModel):
     source: SourceInfo
     bounding_box: BoundingBox
     media: Optional[MediaInfo] = None
+    vehicle_type: Optional[str] = None
+    vehicle_color: Optional[str] = None
 
 class DetectionDocument(DetectionCreate):
     id: str = Field(alias="_id")
@@ -50,6 +52,8 @@ class DetectionResponse(BaseModel):
     occurrence_count: int
     status: str
     created_at: datetime
+    vehicle_type: Optional[str] = None
+    vehicle_color: Optional[str] = None
 
     class Config:
         populate_by_name = True

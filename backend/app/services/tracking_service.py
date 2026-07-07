@@ -141,16 +141,28 @@ class TrackBuffer:
         self.best_bbox: list[int] = []
         self.best_validity_score: float = 0.0
 
+        # Classification fields for advanced search & clone mismatches
+        self.vehicle_class: str = "Unknown"
+        self.vehicle_color: str = "Unknown"
+
         # Full OCR history for this track
         self.ocr_candidates: list[dict] = []
 
         self.finalized: bool = False
 
-    def update(self, crop: np.ndarray, bbox: list[int], detection_confidence: float) -> None:
+    def update(self, crop: np.ndarray, bbox: list[int], detection_confidence: float, vehicle_class: str = None) -> None:
         """Update track state from a new frame detection."""
         self.last_seen = datetime.utcnow()
         self.frame_count += 1
         self.best_detection_confidence = max(detection_confidence, self.best_detection_confidence)
+
+        if vehicle_class:
+            self.vehicle_class = vehicle_class
+            try:
+                from app.utils.image_preprocessing import classify_vehicle_color
+                self.vehicle_color = classify_vehicle_color(crop)
+            except Exception:
+                pass
 
         sharpness = calculate_sharpness(crop)
         x1, y1, x2, y2 = bbox
@@ -302,6 +314,7 @@ class TrackingService:
         crop: np.ndarray,
         bbox: list[int],
         detection_confidence: float,
+        vehicle_class: str = None
     ) -> TrackBuffer:
         """Create or update the track buffer for a given track_id."""
         if track_id not in self.active_tracks:
@@ -316,7 +329,7 @@ class TrackingService:
             )
 
         buf = self.active_tracks[track_id]
-        buf.update(crop, bbox, detection_confidence)
+        buf.update(crop, bbox, detection_confidence, vehicle_class=vehicle_class)
         return buf
 
     def should_run_ocr(self, track_id: int, current_frame_idx: int) -> bool:

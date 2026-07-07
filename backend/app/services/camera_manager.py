@@ -309,6 +309,7 @@ class CameraPipeline:
                 crop=vehicle_crop,
                 bbox=vehicle["bbox"],
                 detection_confidence=vehicle["confidence"],
+                vehicle_class=vehicle.get("class_name")
             )
 
         for vehicle_track_id, plates in assignments.items():
@@ -637,6 +638,7 @@ class CameraManager:
                     logger.warning(f"[{camera_id}] Failed to save crop: {we}")
 
             media = MediaInfo(plate_crop_path=crop_url)
+            detection_id = None
 
             if not is_dup:
                 det = DetectionCreate(
@@ -648,8 +650,11 @@ class CameraManager:
                     source=pipeline.source_info,
                     bounding_box=bbox_model,
                     media=media,
+                    vehicle_type=buf.vehicle_class,
+                    vehicle_color=buf.vehicle_color
                 )
                 det_id = await detection_repo.insert_detection(det)
+                detection_id = det_id
                 full_det = await detection_repo.get_detection(det_id)
                 if full_det:
                     await ws_manager.broadcast(
@@ -660,6 +665,7 @@ class CameraManager:
                         f"plate='{plate_text}' score={combined_score:.4f}"
                     )
             else:
+                detection_id = existing_id
                 full_det = await detection_repo.get_detection(existing_id)
                 if full_det:
                     await ws_manager.broadcast(
@@ -668,6 +674,30 @@ class CameraManager:
                 logger.info(
                     f"[{camera_id}] Track {buf.track_id}: DUPLICATE plate='{plate_text}', "
                     f"updated existing record {existing_id}"
+                )
+
+            # Spawn background intelligence pipelines (Stolen Vehicle & Cloned Plate check)
+            if detection_id:
+                from app.services.stolen_vehicle_service import stolen_vehicle_service
+                from app.services.clone_analysis_service import clone_analysis_service
+                import asyncio
+                
+                asyncio.create_task(
+                    stolen_vehicle_service.process_detection(
+                        detection_id=detection_id,
+                        plate_number=plate_text,
+                        ocr_confidence=ocr_conf,
+                        detection_confidence=buf.best_detection_confidence,
+                        camera_id=camera_id,
+                        camera_name=pipeline.source_info.name,
+                        camera_location=pipeline.source_info.name,
+                        plate_crop_path=crop_url
+                    )
+                )
+                asyncio.create_task(
+                    clone_analysis_service.analyze_detection(
+                        current_det_id=detection_id
+                    )
                 )
 
         except Exception as exc:

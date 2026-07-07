@@ -23,7 +23,9 @@ class DetectionRepository:
             last_seen=doc["last_seen"],
             occurrence_count=doc["occurrence_count"],
             status=doc["status"],
-            created_at=doc["created_at"]
+            created_at=doc["created_at"],
+            vehicle_type=doc.get("vehicle_type"),
+            vehicle_color=doc.get("vehicle_color")
         )
 
     async def insert_detection(self, detection: DetectionCreate) -> str:

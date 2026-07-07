@@ -4,7 +4,14 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from app.config import settings
 from app.database.mongodb import connect_to_mongo, close_mongo_connection, get_database
-from app.api import live_routes, websocket_routes
+from app.api import (
+    live_routes,
+    websocket_routes,
+    stolen_vehicle_routes,
+    clone_routes,
+    search_routes,
+    alert_routes
+)
 from app.services.yolo_service import yolo_service
 from app.services.ocr_service import ocr_service
 
@@ -62,6 +69,7 @@ async def startup_event():
     # 5. Mount static folders for frame uploads and plate crop images
     app.mount("/uploads", StaticFiles(directory=str(settings.upload_path)), name="uploads")
     app.mount("/crops", StaticFiles(directory=str(settings.crops_path)), name="crops")
+    app.mount("/stolen_images", StaticFiles(directory=str(settings.stolen_images_path)), name="stolen_images")
 
     logger.info(
         f"TRINETHRA API Server ready. "
@@ -89,6 +97,10 @@ async def shutdown_event():
 # Include routers
 app.include_router(live_routes.router)
 app.include_router(websocket_routes.router)
+app.include_router(stolen_vehicle_routes.router)
+app.include_router(clone_routes.router)
+app.include_router(search_routes.router)
+app.include_router(alert_routes.router)
 
 @app.get("/api/health")
 async def health_check():
